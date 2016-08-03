@@ -11,19 +11,8 @@ import (
 	"github.com/tubbebubbe/transmission"
 )
 
-type torrentInfo struct {
-	name string
-	dir  string
-	id   int
-}
-
 const pathToHD = "/Volumes/1 TB WD/"
 const MB = 1000000
-
-var (
-	stat syscall.Statfs_t
-	tNFO torrentInfo
-)
 
 func main() {
 	logf, err := os.OpenFile("errors.log",
@@ -37,80 +26,93 @@ func main() {
 
 	client := transmission.New("http://127.0.0.1:9091", "admin", "admin")
 	for {
-		var torrentList []torrentInfo
 		torrents, err := client.GetTorrents()
-		checkErr(err)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		for _, torrent := range torrents {
 			if torrent.PercentDone == 1 {
-				tNFO.dir = torrent.DownloadDir
-				tNFO.name = torrent.Name
-				tNFO.id = torrent.ID
-				torrentList = append(torrentList, tNFO)
+
+				// tNFO.dir = torrent.DownloadDir
+				// tNFO.name = torrent.Name
+				// tNFO.id = torrent.ID
+				// torrentList = append(torrentList, tNFO)V
+
+				var stat syscall.Statfs_t
+
+				err := syscall.Statfs(pathToHD, &stat)
+				if err != nil {
+					// fmt.Println(err)
+					log.Printf("Unable to locate HD: %s\n", pathToHD)
+					time.Sleep(time.Minute * 1)
+					break
+				}
+
+				avbSpace := stat.Bavail * uint64(stat.Bsize)
+
+				fmt.Println("Available space: ", avbSpace/MB, "MB")
+
+				r, err := os.Open(torrent.DownloadDir + "/" + torrent.Name)
+				checkErr(err)
+
+				defer r.Close()
+
+				fileStat, err := r.Stat()
+				checkErr(err)
+
+				fileSize := fileStat.Size()
+
+				if i, err := os.Stat(pathToHD + torrent.Name); err == nil && i.Size() == fileSize {
+					fmt.Printf("File %s already exists in %s... skipping\n", torrent.Name, pathToHD)
+					// ADD TORRENT REMOVAL
+					continue
+				}
+
+				if avbSpace-uint64(fileSize) > 0 {
+
+					w, err := os.Create(pathToHD + torrent.Name)
+					checkErr(err)
+					defer w.Close()
+
+					fmt.Printf("Copying %s to %s\n", torrent.Name, pathToHD)
+
+					n, err := io.Copy(w, r)
+					checkErr(err)
+
+					fmt.Printf("copied %v Megabytes \n", n/MB)
+
+					removeTorrent(torrent.ID, client)
+
+				} else {
+					_, _ = logf.WriteString("Not enough available space in the HD")
+					continue
+				}
 
 			}
 		}
 
-		// if _, err := os.Stat(pathToHD); os.IsNotExist(err) {
-		// _, err = logf.WriteString("HD not found")
-		// continue
-		// }
-
-		for _, file := range torrentList {
-			// fmt.Println(torrentList)
-			// errorVal := ""
-
-			err := syscall.Statfs(pathToHD, &stat)
-			if err != nil {
-				// fmt.Println(err)
-				logf.WriteString("Unable to locate HD: " + pathToHD)
-				time.Sleep(time.Minute * 1)
-				break
-			}
-			avbSpace := stat.Bavail * uint64(stat.Bsize)
-
-			fmt.Println("Available space: ", stat.Bavail*uint64(stat.Bsize)/MB, "MB")
-
-			if _, err := os.Stat(pathToHD + file.name); err == nil {
-				fmt.Printf("File %s already exists in %s... skipping\n", file.name, pathToHD)
-				continue
-			}
-
-			r, err := os.Open(file.dir + "/" + file.name)
-			checkErr(err)
-
-			defer r.Close()
-
-			fileStat, err := r.Stat()
-			checkErr(err)
-
-			fileSize := fileStat.Size()
-
-			if avbSpace-uint64(fileSize) > 0 {
-
-				w, err := os.Create(pathToHD + file.name)
-				checkErr(err)
-				defer w.Close()
-
-				fmt.Printf("Copying %s to %s\n", file.name, pathToHD)
-
-				n, err := io.Copy(w, r)
-				checkErr(err)
-
-				fmt.Printf("copied %v Megabytes \n", n/MB)
-
-				/* delCmd, err := transmission.NewDelCmd(file.id, true) */
-				// checkErr(err)
-
-				// _, err = client.ExecuteCommand(delCmd)
-				/* checkErr(err) */
-
-			} else {
-				_, _ = logf.WriteString("Not enough available space in the HD")
-				continue
-			}
-
-		}
 		time.Sleep(time.Second * 5)
+		// for _, file := range torrentList {
+		// fmt.Println(torrentList)
+		// errorVal := ""
+
 	}
+}
+
+func removeTorrent(id int, client transmission.TransmissionClient) bool {
+	delCmd, err := transmission.NewDelCmd(id, true)
+	if err != nil {
+		checkErr(err)
+		return false
+
+	}
+	_, err = client.ExecuteCommand(delCmd)
+	if err != nil {
+		checkErr(err)
+		return false
+
+	}
+	return true
 
 }
