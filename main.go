@@ -12,7 +12,7 @@ import (
 )
 
 const pathToHD = "/Volumes/1 TB WD/"
-const MB = 1000000
+const MB = 1000000.0
 
 func main() {
 	logf, err := os.OpenFile("errors.log",
