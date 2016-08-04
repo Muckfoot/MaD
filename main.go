@@ -15,16 +15,12 @@ const pathToHD = "/Volumes/1 TB WD/"
 const MB = 1000000.0
 
 func main() {
-	logf, err := os.OpenFile("errors.log",
-		os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
+	logf := initLogs()
+	cfg := getCfg()
 
-	defer logf.Close()
-	log.SetOutput(logf)
+	client := transmission.New("http://127.0.0.1:9091", cfg.Login.Username,
+		cfg.Login.Password)
 
-	client := transmission.New("http://127.0.0.1:9091", "admin", "admin")
 	for {
 		torrents, err := client.GetTorrents()
 		if err != nil {
@@ -34,17 +30,11 @@ func main() {
 		for _, torrent := range torrents {
 			if torrent.PercentDone == 1 {
 
-				// tNFO.dir = torrent.DownloadDir
-				// tNFO.name = torrent.Name
-				// tNFO.id = torrent.ID
-				// torrentList = append(torrentList, tNFO)V
-
 				var stat syscall.Statfs_t
 
-				err := syscall.Statfs(pathToHD, &stat)
+				err := syscall.Statfs(cfg.Paths.PathToHD, &stat)
 				if err != nil {
-					// fmt.Println(err)
-					log.Printf("Unable to locate HD: %s\n", pathToHD)
+					log.Printf("Unable to locate HD: %s\n", cfg.Paths.PathToHD)
 					time.Sleep(time.Minute * 1)
 					break
 				}
@@ -63,19 +53,21 @@ func main() {
 
 				fileSize := fileStat.Size()
 
-				if i, err := os.Stat(pathToHD + torrent.Name); err == nil && i.Size() == fileSize {
-					fmt.Printf("File %s already exists in %s... skipping\n", torrent.Name, pathToHD)
+				if i, err := os.Stat(cfg.Paths.PathToHD,
+					+torrent.Name); err == nil && i.Size() == fileSize {
+					fmt.Printf("File %s already exists in %s... skipping\n",
+						torrent.Name, cfg.Paths.PathToHD)
 					// ADD TORRENT REMOVAL
 					continue
 				}
 
 				if avbSpace-uint64(fileSize) > 0 {
 
-					w, err := os.Create(pathToHD + torrent.Name)
+					w, err := os.Create(cfg.Paths.PathToHD, +torrent.Name)
 					checkErr(err)
 					defer w.Close()
 
-					fmt.Printf("Copying %s to %s\n", torrent.Name, pathToHD)
+					fmt.Printf("Copying %s to %s\n", torrent.Name, cfg.Paths.PathToHD)
 
 					n, err := io.Copy(w, r)
 					checkErr(err)
@@ -93,10 +85,6 @@ func main() {
 		}
 
 		time.Sleep(time.Second * 5)
-		// for _, file := range torrentList {
-		// fmt.Println(torrentList)
-		// errorVal := ""
-
 	}
 }
 

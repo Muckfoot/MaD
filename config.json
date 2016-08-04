@@ -1,0 +1,9 @@
+{
+	"login" : {
+		"username" : "admin",
+		"password" : "admin"
+	},
+	"paths" : {
+		"pathToHD" : "/Volumes/1 TB WD/"
+	}
+}
